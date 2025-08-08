@@ -1,5 +1,9 @@
 # Changelog
 
+## [0.1.40]
+
+调整抖音接口
+
 ## [0.1.39]
 
 修复 bili 无法获取原画 [#277](https://github.com/Borber/seam/issues/277)
