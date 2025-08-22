@@ -59,26 +59,37 @@ impl Live for Client {
             .unwrap_or("获取失败")
             .to_owned();
 
-        match &json["liveroom"]["playList"][0]["liveStream"]["playUrls"][0]["adaptationSet"]
-            ["representation"]
-        {
-            serde_json::Value::Null => Err(SeamError::None),
-            reps => {
-                let list = reps.as_array().ok_or(SeamError::NeedFix("list"))?;
-                let url = list[list.len() - 1]["url"]
-                    .as_str()
-                    .ok_or(SeamError::NeedFix("url"))?;
-                let urls = vec![parse_url(url.to_string())];
-                Ok(Node {
-                    rid: rid.to_owned(),
-                    title,
-                    cover,
-                    anchor,
-                    head,
-                    urls,
-                })
-            }
-        }
+        // 修复直播源提取逻辑
+        let play_urls = json["liveroom"]["playList"][0]["liveStream"]
+            .get("playUrls")
+            .and_then(|pu| pu.as_array())
+            .and_then(|arr| arr.get(0))
+            .ok_or(SeamError::None)?;
+
+        let representation = if play_urls.get("h264").is_some() {
+            play_urls["h264"]["adaptationSet"]["representation"]
+                .as_array()
+                .ok_or(SeamError::NeedFix("h264 representation"))?
+        } else {
+            play_urls["adaptationSet"]["representation"]
+                .as_array()
+                .ok_or(SeamError::NeedFix("representation"))?
+        };
+
+        let url = representation
+            .last()
+            .and_then(|rep| rep["url"].as_str())
+            .ok_or(SeamError::NeedFix("url"))?;
+        let urls = vec![parse_url(url.to_string())];
+
+        Ok(Node {
+            rid: rid.to_owned(),
+            title,
+            cover,
+            anchor,
+            head,
+            urls,
+        })
     }
 }
 
