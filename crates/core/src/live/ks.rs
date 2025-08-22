@@ -30,14 +30,30 @@ impl Live for Client {
             .await?
             .text()
             .await?;
-        let re = Regex::new(r"<script>window.__INITIAL_STATE__=([\s\S]*?);\(function")?;
+        // 优化正则表达式，参考 Python 脚本
+        let re = Regex::new(r#"<script>window.__INITIAL_STATE__=(.*?);\(function\(\)\{var s;"#)?;
         let stream = match re.captures(&text) {
             Some(caps) => caps.get(1).ok_or(SeamError::NeedFix("stream"))?.as_str(),
             None => {
                 return Err(SeamError::NeedFix("stream none"));
             }
         };
-        let json: serde_json::Value = serde_json::from_str(stream)?;
+        // 解析 JSON 数据，添加调试信息
+        let json: serde_json::Value = match serde_json::from_str(stream) {
+            Ok(json) => json,
+            Err(e) => {
+                // 打印部分 stream 内容以便调试
+                let snippet = if stream.len() > 100 {
+                    &stream[..100]
+                } else {
+                    stream
+                };
+                return Err(SeamError::NeedFix(&format!(
+                    "JSON parse error: {} at '{}'",
+                    e, snippet
+                )));
+            }
+        };
 
         let title = json["liveroom"]["playList"][0]["liveStream"]["caption"]
             .as_str()
@@ -59,7 +75,7 @@ impl Live for Client {
             .unwrap_or("获取失败")
             .to_owned();
 
-        // 修复直播源提取逻辑
+        // 提取直播源
         let play_urls = json["liveroom"]["playList"][0]["liveStream"]
             .get("playUrls")
             .and_then(|pu| pu.as_array())
