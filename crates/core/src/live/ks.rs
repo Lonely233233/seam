@@ -30,7 +30,6 @@ impl Live for Client {
             .await?
             .text()
             .await?;
-        // 优化正则表达式，参考 Python 脚本
         let re = Regex::new(r#"<script>window.__INITIAL_STATE__=(.*?);\(function\(\)\{var s;"#)?;
         let stream = match re.captures(&text) {
             Some(caps) => caps.get(1).ok_or(SeamError::NeedFix("stream"))?.as_str(),
@@ -38,11 +37,9 @@ impl Live for Client {
                 return Err(SeamError::NeedFix("stream none"));
             }
         };
-        // 解析 JSON 数据，添加调试信息
         let json: serde_json::Value = match serde_json::from_str(stream) {
             Ok(json) => json,
             Err(e) => {
-                // 打印部分 stream 内容以便调试
                 let snippet = if stream.len() > 100 {
                     &stream[..100]
                 } else {
