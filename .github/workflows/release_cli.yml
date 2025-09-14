@@ -7,6 +7,7 @@ on:
   push:
     tags:
       - v_cli.*
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -15,22 +16,27 @@ jobs:
   create_release:
     runs-on: ubuntu-latest
     outputs:
-      changes: ${{ steps.changelog_reader.outputs.changes }}
-      version: ${{ steps.changelog_reader.outputs.VERSION }}
+      changes: "无变更日志可用"
+      version: ${{ steps.get_version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - name: Get version number
+      - name: 获取版本号
         id: get_version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/}
-          VERSION=${VERSION/v_cli./}
-          echo "::set-output name=version::$VERSION"
-      - name: Changelog Reader
-        id: changelog_reader
-        uses: mindsers/changelog-reader-action@v2.2.2
-        with:
-          path: './crates/cli/CHANGELOG.md'
-          version: ${{ steps.get_version.outputs.version }}
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION=$(date -u +%Y-%m-%d-%H%M)
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+            VERSION=${VERSION/v_cli./}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: 为 workflow_dispatch 创建标签
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git tag v_cli.${{ steps.get_version.outputs.version }}
+          git push origin v_cli.${{ steps.get_version.outputs.version }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-cross:
     needs: create_release
@@ -53,11 +59,9 @@ jobs:
           - arm-unknown-linux-musleabihf
           - aarch64-unknown-linux-gnu
           - aarch64-unknown-linux-musl
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
+      - name: 安装 Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -65,35 +69,27 @@ jobs:
           toolchain: stable
           default: true
           override: true
-
-      - name: Install cross
+      - name: 安装 cross
         run: cargo install cross
-
-      - name: Build ${{ matrix.target }}
+      - name: 构建 ${{ matrix.target }}
         timeout-minutes: 120
         run: |
           compile_target=${{ matrix.target }}
-
-          # if [[ "$compile_target" == *"-linux-"* || "$compile_target" == *"-apple-"* ]]; then
-          #   compile_features="-f local-redir -f local-tun"
-          # fi
-
           if [[ "$compile_target" == "mips-"* || "$compile_target" == "mipsel-"* || "$compile_target" == "mips64-"* || "$compile_target" == "mips64el-"* ]]; then
             sudo apt-get update -y && sudo apt-get install -y upx;
             if [[ "$?" == "0" ]]; then
               compile_compress="-u"
             fi
           fi
-
           cd build
           chmod +x build-release
           ./build-release -t ${{ matrix.target }} $compile_features $compile_compress
-
-      - name: Upload Github Assets
+      - name: 上传 GitHub 资产
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: v_cli.${{ needs.create_release.outputs.version }}
           name: Seam CLI ${{ needs.create_release.outputs.version }}
           body: |
             ${{ needs.create_release.outputs.changes }}
@@ -115,14 +111,12 @@ jobs:
           - aarch64-apple-darwin
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install GNU tar
+      - name: 安装 GNU tar
         if: runner.os == 'macOS'
         run: |
           brew install gnu-tar
           echo "/usr/local/opt/gnu-tar/libexec/gnubin" >> $GITHUB_PATH
-
-      - name: Install Rust
+      - name: 安装 Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
@@ -130,18 +124,17 @@ jobs:
           toolchain: stable
           default: true
           override: true
-
-      - name: Build release
+      - name: 构建发布版本
         shell: bash
         run: |
           chmod +x ./build/build-host-release
           ./build/build-host-release -t ${{ matrix.target }}
-
-      - name: Upload Github Assets
+      - name: 上传 GitHub 资产
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: v_cli.${{ needs.create_release.outputs.version }}
           name: Seam CLI ${{ needs.create_release.outputs.version }}
           body: |
             ${{ needs.create_release.outputs.changes }}
@@ -157,24 +150,22 @@ jobs:
       RUST_BACKTRACE: full
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
+      - name: 安装 Rust
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           default: true
           override: true
-
-      - name: Build release
+      - name: 构建发布版本
         run: |
           pwsh ./build/build-host-release.ps1
-
-      - name: Upload Github Assets
+      - name: 上传 GitHub 资产
         uses: softprops/action-gh-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          tag_name: v_cli.${{ needs.create_release.outputs.version }}
           name: Seam CLI ${{ needs.create_release.outputs.version }}
           body: |
             ${{ needs.create_release.outputs.changes }}
